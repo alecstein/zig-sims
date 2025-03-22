@@ -22,8 +22,6 @@ fn pointIsRightOfLine(p: c.Vector2, a: c.Vector2, b: c.Vector2) bool {
 // Three points a, b, and q partition the remaining points of Sk into 3 subsets: S0, S1, and S2
 // where S0 are points inside triangle aqb, S1 are points on the right side of the oriented
 // line from a to q, and S2 are points on the right side of the oriented line from q to b
-// FindHull(S1, a, q)
-// FindHull(S2, q, b)
 fn findHull(s_k: []*Particle, a: c.Vector2, b: c.Vector2, result: *std.ArrayList(*Particle), alloc: std.mem.Allocator) !void {
     if (s_k.len == 0) return;
 
@@ -112,9 +110,7 @@ pub fn quickHull(particles: []Particle, alloc: std.mem.Allocator) ![]*Particle {
     return hull_points.toOwnedSlice();
 }
 
-/// Orders hull points in counter-clockwise order around their centroid
-/// Takes a list of points that are already known to be on the hull
-/// Returns a newly allocated slice that must be freed by the caller
+/// orders hull points order around their centroid
 pub fn orderHullByAngle(hull_points: []*Particle) void {
     if (hull_points.len <= 1) return;
     

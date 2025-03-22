@@ -7,7 +7,7 @@ var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 const allocator = gpa.allocator();
 
 const quickHull = @import("convex_hull.zig").quickHull;
-const draw = @import("draw.zig").draw;
+const drawSystem = @import("draw.zig").drawSystem;
 
 var texture: c.RenderTexture2D = undefined;
 
@@ -44,7 +44,7 @@ fn initializeParticles(particles: []Particle, max_init_position: f32, max_init_v
     }
 }
 
-fn update(particles: []Particle, convex_hull: []const *Particle, k: f32) void {
+fn update(particles: []Particle, convex_hull: []const *Particle, surf_tension: f32) void {
     for (particles) |*particle| {
         particle.position.x += particle.velocity.x;
         particle.position.y += particle.velocity.y;
@@ -55,14 +55,14 @@ fn update(particles: []Particle, convex_hull: []const *Particle, k: f32) void {
             particle.velocity.y = -particle.velocity.y;
         }
     }
-    applyForces(convex_hull, k);
+    applyForces(convex_hull, surf_tension);
 }
 
-// L(p) = |p-a| + |p-b| (sum of distances from p to neighboring points)
-// The gradient is:
+// model: force on p is proportional to ∇L(p.position)
+// L(p) = |p-a| + |p-b| 
 // ∇L(p) = (p-a)/|p-a| + (p-b)/|p-b|
-// in other words, it's the sum of unit vectors
-fn applyForces(convex_hull: []const *Particle, k: f32) void {
+// just need to sum these unit vectors
+fn applyForces(convex_hull: []const *Particle, surf_tension: f32) void {
     if (convex_hull.len < 3) return;
 
     for (convex_hull, 0..) |_, i| {
@@ -98,8 +98,8 @@ fn applyForces(convex_hull: []const *Particle, k: f32) void {
             .y = pa_normed.y + pb_normed.y,
         };
 
-        convex_hull[i].velocity.x += force.x * k;
-        convex_hull[i].velocity.y += force.y * k;
+        convex_hull[i].velocity.x += force.x * surf_tension;
+        convex_hull[i].velocity.y += force.y * surf_tension;
     }
 }
 
@@ -139,7 +139,7 @@ pub fn main() !void {
         const convex_hull = try quickHull(&particles, allocator);
         defer allocator.free(convex_hull);
         update(&particles, convex_hull, surf_tension);
-        draw(&particles, convex_hull, texture);
+        drawSystem(&particles, convex_hull, texture);
 
         c.DrawText(n_particles_text, 10, 10, font_size, c.WHITE); // Draw the title at position (10,10) with font size 20
         c.DrawText(max_init_velocity_text.ptr, 10, 10 + (4 + font_size), font_size, c.WHITE);
