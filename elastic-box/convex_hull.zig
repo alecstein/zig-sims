@@ -9,14 +9,14 @@ fn scalarCrossProduct(a: c.Vector2, b: c.Vector2) f32 {
     return a.x * b.y - a.y * b.x;
 }
 
-fn pointRightOfLine(p: c.Vector2, a: c.Vector2, b: c.Vector2) bool {
+// returns True if p is to the right of the line from a to b
+fn pointIsRightOfLine(p: c.Vector2, a: c.Vector2, b: c.Vector2) bool {
     const ab = c.Vector2{ .x = b.x - a.x, .y = b.y - a.y };
     const ap = c.Vector2{ .x = p.x - a.x, .y = p.y - a.y };
     const scalar_xp = scalarCrossProduct(ap, ab);
     return scalar_xp < 0;
 }
 
-// Basic outline of the algorithm:
 // From the given set of points in s_k, find farthest point, say q, from segment ab
 // Add point q to convex hull at the location between a and b
 // Three points a, b, and q partition the remaining points of Sk into 3 subsets: S0, S1, and S2
@@ -42,7 +42,7 @@ fn findHull(s_k: []*Particle, a: c.Vector2, b: c.Vector2, result: *std.ArrayList
         }
     }
 
-    // this is where we add a particle to the convex_hull
+    // q gets added to the convex hull
     const q = s_k[max_d_idx];
     try result.append(q);
 
@@ -53,9 +53,9 @@ fn findHull(s_k: []*Particle, a: c.Vector2, b: c.Vector2, result: *std.ArrayList
 
     for (s_k, 0..) |p, i| {
         if (i == max_d_idx) continue;
-        if (pointRightOfLine(p.position, a, q.position)) {
+        if (pointIsRightOfLine(p.position, a, q.position)) {
             try s_1.append(p);
-        } else if (pointRightOfLine(p.position, q.position, b)) {
+        } else if (pointIsRightOfLine(p.position, q.position, b)) {
             try s_2.append(p);
         }
     }
@@ -64,7 +64,7 @@ fn findHull(s_k: []*Particle, a: c.Vector2, b: c.Vector2, result: *std.ArrayList
     try findHull(s_2.items, q.position, b, result, alloc);
 }
 
-pub fn quickHull(particles: []Particle, alloc: std.mem.Allocator) ![]const *Particle {
+pub fn quickHull(particles: []Particle, alloc: std.mem.Allocator) ![]*Particle {
     var hull_points = std.ArrayList(*Particle).init(alloc);
     errdefer hull_points.deinit();
 
@@ -97,7 +97,7 @@ pub fn quickHull(particles: []Particle, alloc: std.mem.Allocator) ![]const *Part
 
     for (particles) |*p| {
         if (p == a or p == b) continue;
-        if (pointRightOfLine(p.position, a.position, b.position)) {
+        if (pointIsRightOfLine(p.position, a.position, b.position)) {
             try s_1.append(p);
         } else {
             try s_2.append(p);
@@ -114,7 +114,7 @@ pub fn quickHull(particles: []Particle, alloc: std.mem.Allocator) ![]const *Part
 /// Orders hull points in counter-clockwise order around their centroid
 /// Takes a list of points that are already known to be on the hull
 /// Returns a newly allocated slice that must be freed by the caller
-pub fn orderPoints(points: []const *Particle, allocator: std.mem.Allocator) ![]const *Particle {
+pub fn orderPoints(points: []*Particle, allocator: std.mem.Allocator) ![]*Particle {
     // Calculate centroid of all hull points
     var centroid = c.Vector2{ .x = 0, .y = 0 };
     for (points) |p| {

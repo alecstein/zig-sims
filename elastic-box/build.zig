@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const exe = b.addExecutable(.{
-        .name = "elastic-sim",
+        .name = "gas-in-elastic-box",
         .root_source_file = .{ .cwd_relative = "main.zig" },
         .target = target,
         .optimize = optimize,
@@ -26,6 +26,6 @@ pub fn build(b: *std.Build) void {
         run_cmd.addArgs(args);
     }
 
-    const run_step = b.step("run", "Run the consistent hashing simulation");
+    const run_step = b.step("run", "run the simulation");
     run_step.dependOn(&run_cmd.step);
 }
