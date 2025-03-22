@@ -109,6 +109,7 @@ pub fn main() !void {
     const max_init_velocity: f32 = 0.1;
     const surf_tension: f32 = 0.3;
     const font_size: usize = 19;
+    const text_color: c.Color = c.WHITE;
 
     const n_particles_text = std.fmt.allocPrintZ(allocator, "particles: {d}", .{n_particles}) catch "format failed";
     const max_init_velocity_text = std.fmt.allocPrintZ(allocator, "max_init_vel: {d:.2}", .{max_init_velocity}) catch "format failed";
@@ -141,9 +142,9 @@ pub fn main() !void {
         update(&particles, convex_hull, surf_tension);
         drawSystem(&particles, convex_hull, texture);
 
-        c.DrawText(n_particles_text, 10, 10, font_size, c.WHITE); // Draw the title at position (10,10) with font size 20
-        c.DrawText(max_init_velocity_text.ptr, 10, 10 + (4 + font_size), font_size, c.WHITE);
-        c.DrawText(surf_tension_text.ptr, 10, 10 + 2*(4 + font_size), font_size, c.WHITE);
+        c.DrawText(n_particles_text, 10, 10, font_size, text_color); // Draw the title at position (10,10) with font size 20
+        c.DrawText(max_init_velocity_text.ptr, 10, 10 + (4 + font_size), font_size, text_color);
+        c.DrawText(surf_tension_text.ptr, 10, 10 + 2*(4 + font_size), font_size, text_color);
         c.EndDrawing();
     }
 
