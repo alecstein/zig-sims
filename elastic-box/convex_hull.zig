@@ -107,26 +107,25 @@ pub fn quickHull(particles: []Particle, alloc: std.mem.Allocator) ![]*Particle {
     try findHull(s_1.items, a.position, b.position, &hull_points, alloc);
     try findHull(s_2.items, b.position, a.position, &hull_points, alloc);
     
-    // Order and return
-    return try orderPoints(hull_points.items, alloc);
+    orderHullByAngle(hull_points.items);
+
+    return hull_points.toOwnedSlice();
 }
 
 /// Orders hull points in counter-clockwise order around their centroid
 /// Takes a list of points that are already known to be on the hull
 /// Returns a newly allocated slice that must be freed by the caller
-pub fn orderPoints(points: []*Particle, allocator: std.mem.Allocator) ![]*Particle {
-    // Calculate centroid of all hull points
+pub fn orderHullByAngle(hull_points: []*Particle) void {
+    if (hull_points.len <= 1) return;
+    
     var centroid = c.Vector2{ .x = 0, .y = 0 };
-    for (points) |p| {
+    for (hull_points) |p| {
         centroid.x += p.position.x;
         centroid.y += p.position.y;
     }
-    centroid.x /= @as(f32, @floatFromInt(points.len));
-    centroid.y /= @as(f32, @floatFromInt(points.len));
-
-    const result = try allocator.alloc(*Particle, points.len);
-    @memcpy(result, points);
-
+    centroid.x /= @as(f32, @floatFromInt(hull_points.len));
+    centroid.y /= @as(f32, @floatFromInt(hull_points.len));
+    
     const AngleContext = struct {
         centroid: c.Vector2,
         pub fn lessThan(context: @This(), a: *Particle, b: *Particle) bool {
@@ -135,8 +134,6 @@ pub fn orderPoints(points: []*Particle, allocator: std.mem.Allocator) ![]*Partic
             return a_angle < b_angle;
         }
     };
-
-    std.sort.insertion(*Particle, result, AngleContext{ .centroid = centroid }, AngleContext.lessThan);
-
-    return result;
+    
+    std.sort.pdq(*Particle, hull_points, AngleContext{ .centroid = centroid }, AngleContext.lessThan);
 }

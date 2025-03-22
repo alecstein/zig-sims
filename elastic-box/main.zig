@@ -117,7 +117,7 @@ pub fn main() !void {
     defer allocator.free(max_init_velocity_text);
     defer allocator.free(surf_tension_text);
 
-    c.InitWindow(screen_width, screen_height, "simulation");
+    c.InitWindow(screen_width, screen_height, "zig-sim");
     texture = c.LoadRenderTexture(screen_width, screen_height);
     c.SetTargetFPS(120);
 
