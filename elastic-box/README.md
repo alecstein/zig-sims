@@ -19,3 +19,6 @@ zig build -Doptimize=ReleaseFast run
 # TODOs
 
 Write the total entropy as S_max = S_x_max + S_p_max and find the difference between the distributions to measure S(t).
+
+* For mixing-momenta, just use the expression for delta p_n and integrate out the piston entirely and see if the simulation gives the same thing. you should be able to do this efficiently.
+* see if you can find a system this is similar to. is the piston problem dual to another?

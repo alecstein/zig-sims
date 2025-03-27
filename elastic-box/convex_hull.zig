@@ -1,18 +1,18 @@
 const std = @import("std");
-const c = @cImport({
+const rl = @cImport({
     @cInclude("raylib.h");
 });
 
 const Particle = @import("main.zig").Particle;
 
-fn scalarCrossProduct(a: c.Vector2, b: c.Vector2) f32 {
+fn scalarCrossProduct(a: rl.Vector2, b: rl.Vector2) f32 {
     return a.x * b.y - a.y * b.x;
 }
 
 // returns True if p is to the right of the line from a to b
-fn pointIsRightOfLine(p: c.Vector2, a: c.Vector2, b: c.Vector2) bool {
-    const ab = c.Vector2{ .x = b.x - a.x, .y = b.y - a.y };
-    const ap = c.Vector2{ .x = p.x - a.x, .y = p.y - a.y };
+fn pointIsRightOfLine(p: rl.Vector2, a: rl.Vector2, b: rl.Vector2) bool {
+    const ab = rl.Vector2{ .x = b.x - a.x, .y = b.y - a.y };
+    const ap = rl.Vector2{ .x = p.x - a.x, .y = p.y - a.y };
     const scalar_xp = scalarCrossProduct(ap, ab);
     return scalar_xp < 0;
 }
@@ -22,17 +22,17 @@ fn pointIsRightOfLine(p: c.Vector2, a: c.Vector2, b: c.Vector2) bool {
 // Three points a, b, and q partition the remaining points of Sk into 3 subsets: S0, S1, and S2
 // where S0 are points inside triangle aqb, S1 are points on the right side of the oriented
 // line from a to q, and S2 are points on the right side of the oriented line from q to b
-fn findHull(s_k: []*Particle, a: c.Vector2, b: c.Vector2, result: *std.ArrayList(*Particle), alloc: std.mem.Allocator) !void {
+fn findHull(s_k: []*Particle, a: rl.Vector2, b: rl.Vector2, result: *std.ArrayList(*Particle), alloc: std.mem.Allocator) !void {
     if (s_k.len == 0) return;
 
     var max_d_idx: usize = 0;
     var max_d: f32 = 0;
 
-    const ab = c.Vector2{ .x = b.x - a.x, .y = b.y - a.y };
+    const ab = rl.Vector2{ .x = b.x - a.x, .y = b.y - a.y };
     const ab_magnitude = @sqrt(ab.x * ab.x + ab.y * ab.y);
 
     for (s_k, 0..) |p, i| {
-        const pa = c.Vector2{ .x = p.position.x - a.x, .y = p.position.y - a.y };
+        const pa = rl.Vector2{ .x = p.position.x - a.x, .y = p.position.y - a.y };
         const d = @abs(scalarCrossProduct(pa, ab) / ab_magnitude);
         if (d > max_d) {
             max_d = d;
@@ -65,56 +65,107 @@ fn findHull(s_k: []*Particle, a: c.Vector2, b: c.Vector2, result: *std.ArrayList
 pub fn quickHull(particles: []Particle, alloc: std.mem.Allocator) ![]*Particle {
     var hull_points = std.ArrayList(*Particle).init(alloc);
     errdefer hull_points.deinit();
-
+    
+    // Handle small cases
     if (particles.len < 3) {
+        // Add all particles to the hull for cases with fewer than 3 particles
+        for (particles) |*p| {
+            try hull_points.append(p);
+        }
         return hull_points.toOwnedSlice();
     }
-
-    var min_x_idx: usize = 0;
-    var max_x_idx: usize = 0;
-
-    for (particles, 0..) |_, i| {
-        if (particles[i].position.x < particles[min_x_idx].position.x) {
-            min_x_idx = i;
+    
+    // Find extreme points (min_x and max_x)
+    var min_x: f32 = particles[0].position.x;
+    var max_x: f32 = particles[0].position.x;
+    
+    // First pass: find the actual min/max x values
+    for (particles) |p| {
+        if (p.position.x < min_x) min_x = p.position.x;
+        if (p.position.x > max_x) max_x = p.position.x;
+    }
+    
+    // Second pass: collect all particles with min_x and max_x
+    var min_x_points = std.ArrayList(*Particle).init(alloc);
+    defer min_x_points.deinit();
+    var max_x_points = std.ArrayList(*Particle).init(alloc);
+    defer max_x_points.deinit();
+    
+    for (particles) |*p| {
+        if (p.position.x == min_x) {
+            try min_x_points.append(p);
         }
-        if (particles[i].position.x > particles[max_x_idx].position.x) {
-            max_x_idx = i;
+        if (p.position.x == max_x) {
+            try max_x_points.append(p);
         }
     }
-
-    const a = &particles[min_x_idx];
-    const b = &particles[max_x_idx];
     
-    try hull_points.append(a);
-    try hull_points.append(b);
-
+    // Add all extreme points to the hull
+    for (min_x_points.items) |p| {
+        try hull_points.append(p);
+    }
+    
+    for (max_x_points.items) |p| {
+        // Avoid duplicates if min_x == max_x
+        if (min_x != max_x) {
+            try hull_points.append(p);
+        }
+    }
+    
+    // If we have only points with same x, we're done (vertical line)
+    if (min_x == max_x) {
+        // Sort by y-coordinate to ensure proper ordering
+        orderVerticalHull(hull_points.items);
+        return hull_points.toOwnedSlice();
+    }
+    
+    // Choose one point from each extreme for the dividing line
+    const a = min_x_points.items[0];
+    const b = max_x_points.items[0];
+    
     var s_1 = std.ArrayList(*Particle).init(alloc);
     defer s_1.deinit();
     var s_2 = std.ArrayList(*Particle).init(alloc);
     defer s_2.deinit();
-
+    
+    // Partition points
     for (particles) |*p| {
-        if (p == a or p == b) continue;
+        // Skip all extreme points as they're already in the hull
+        if (p.position.x == min_x or p.position.x == max_x) continue;
+        
         if (pointIsRightOfLine(p.position, a.position, b.position)) {
             try s_1.append(p);
         } else {
             try s_2.append(p);
         }
     }
-
+    
     try findHull(s_1.items, a.position, b.position, &hull_points, alloc);
     try findHull(s_2.items, b.position, a.position, &hull_points, alloc);
     
     orderHullByAngle(hull_points.items);
-
     return hull_points.toOwnedSlice();
 }
 
+// Helper function to order points in a vertical line
+fn orderVerticalHull(points: []*Particle) void {
+    // Sort by y-coordinate
+    std.sort.insertion(
+        *Particle, 
+        points, 
+        {}, 
+        struct {
+            fn lessThan(_: void, a: *Particle, b: *Particle) bool {
+                return a.position.y < b.position.y;
+            }
+        }.lessThan
+    );
+}
 /// orders hull points order around their centroid
 pub fn orderHullByAngle(hull_points: []*Particle) void {
     if (hull_points.len <= 1) return;
     
-    var centroid = c.Vector2{ .x = 0, .y = 0 };
+    var centroid = rl.Vector2{ .x = 0, .y = 0 };
     for (hull_points) |p| {
         centroid.x += p.position.x;
         centroid.y += p.position.y;
@@ -123,7 +174,7 @@ pub fn orderHullByAngle(hull_points: []*Particle) void {
     centroid.y /= @as(f32, @floatFromInt(hull_points.len));
     
     const AngleContext = struct {
-        centroid: c.Vector2,
+        centroid: rl.Vector2,
         pub fn lessThan(context: @This(), a: *Particle, b: *Particle) bool {
             const a_angle = std.math.atan2(a.position.y - context.centroid.y, a.position.x - context.centroid.x);
             const b_angle = std.math.atan2(b.position.y - context.centroid.y, b.position.x - context.centroid.x);

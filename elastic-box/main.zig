@@ -1,22 +1,20 @@
 const std = @import("std");
-const c = @cImport({
+const rl = @cImport({
     @cInclude("raylib.h");
 });
 
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-const allocator = gpa.allocator();
+var dba = std.heap.DebugAllocator(.{}){};
+const allocator = dba.allocator();
 
 const quickHull = @import("convex_hull.zig").quickHull;
 const drawSystem = @import("draw.zig").drawSystem;
 
-var texture: c.RenderTexture2D = undefined;
-
-const screen_width: i32 = 800;
-const screen_height: i32 = 450;
+pub const screen_width: i32 = 800;
+pub const screen_height: i32 = 450;
 
 pub const Particle = struct {
-    position: c.Vector2,
-    velocity: c.Vector2,
+    position: rl.Vector2,
+    velocity: rl.Vector2,
 
     pub fn init(px: f32, py: f32, vx: f32, vy: f32) Particle {
         return Particle{
@@ -26,12 +24,9 @@ pub const Particle = struct {
     }
 };
 
-fn initializeParticles(particles: []Particle, max_init_position: f32, max_init_velocity: f32) void {
+fn initializeParticles(particles: []Particle, max_init_position: f32, max_init_velocity: f32) !void {
     var seed: u64 = undefined;
-    std.posix.getrandom(std.mem.asBytes(&seed)) catch |err| {
-        std.debug.print("failed to get random seed: {}\n", .{err});
-        return;
-    };
+    try std.posix.getrandom(std.mem.asBytes(&seed));
     var prng = std.Random.DefaultPrng.init(seed);
     const rand = prng.random();
     for (particles) |*p| {
@@ -44,18 +39,31 @@ fn initializeParticles(particles: []Particle, max_init_position: f32, max_init_v
     }
 }
 
+// this still needs to have the order checked
 fn update(particles: []Particle, convex_hull: []const *Particle, surf_tension: f32) void {
-    for (particles) |*particle| {
-        particle.position.x += particle.velocity.x;
-        particle.position.y += particle.velocity.y;
-        if ((particle.position.x >= screen_width) or (particle.position.x <= 0)) {
-            particle.velocity.x = -particle.velocity.x;
-        }
-        if ((particle.position.y >= screen_height) or (particle.position.y <= 0)) {
-            particle.velocity.y = -particle.velocity.y;
-        }
-    }
+
     applyForces(convex_hull, surf_tension);
+
+    // we need to handle boundaries carefully. for us, it's
+    // better if particles never leave the window at all.
+    // to that end, we test if the particles will leave the boundary on the next step.
+    // if they will, we flip the velocity instead
+    for (particles) |*particle| {
+        const trial_position_x = particle.position.x + particle.velocity.x;
+        if ((trial_position_x >= screen_width) or (trial_position_x <= 0)) {
+            particle.velocity.x = -particle.velocity.x;
+        } else {
+            particle.position.x = trial_position_x;
+        }
+        const trial_position_y = particle.position.y + particle.velocity.y;
+        if ((trial_position_y >= screen_height) or (trial_position_y <= 0)) {
+            particle.velocity.y = -particle.velocity.y;
+        } else {
+            particle.position.y = trial_position_y;
+        }
+        // particle.position.x += particle.velocity.x;
+        // particle.position.y += particle.velocity.y;
+    }
 }
 
 // model: force on p is proportional to ∇L(p.position)
@@ -73,27 +81,27 @@ fn applyForces(convex_hull: []const *Particle, surf_tension: f32) void {
         const b = convex_hull[nxt_idx].position;
         const p = convex_hull[i].position;
 
-        const pa = c.Vector2{
+        const pa = rl.Vector2{
             .x = a.x - p.x,
             .y = a.y - p.y,
         };
         
-        const pb = c.Vector2{
+        const pb = rl.Vector2{
             .x = b.x - p.x,
             .y = b.y - p.y,
         };
 
-        const pa_normed = c.Vector2{
+        const pa_normed = rl.Vector2{
             .x = pa.x / @sqrt(pa.x * pa.x + pa.y * pa.y),
             .y = pa.y / @sqrt(pa.x * pa.x + pa.y * pa.y),
         };
         
-        const pb_normed = c.Vector2{
+        const pb_normed = rl.Vector2{
             .x = pb.x / @sqrt(pb.x * pb.x + pb.y * pb.y),
             .y = pb.y / @sqrt(pb.x * pb.x + pb.y * pb.y),
         };
 
-        const force = c.Vector2{
+        const force = rl.Vector2{
             .x = pa_normed.x + pb_normed.x,
             .y = pa_normed.y + pb_normed.y,
         };
@@ -103,13 +111,43 @@ fn applyForces(convex_hull: []const *Particle, surf_tension: f32) void {
     }
 }
 
+// Add this function to calculate total energy
+fn calculateTotalEnergy(particles: []Particle, convex_hull: []const *Particle, surf_tension: f32) f32 {
+    // Calculate kinetic energy of ALL particles
+    var kinetic_energy: f32 = 0.0;
+    for (particles) |particle| {
+        kinetic_energy += 0.5 * (particle.velocity.x * particle.velocity.x + 
+                                 particle.velocity.y * particle.velocity.y);
+    }
+    
+    // Calculate perimeter length (potential energy)
+    var perimeter: f32 = 0.0;
+    if (convex_hull.len > 1) {
+        for (convex_hull, 0..) |_, i| {
+            const nxt_idx = (i + 1) % convex_hull.len;
+            const p1 = convex_hull[i].position;
+            const p2 = convex_hull[nxt_idx].position;
+            
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            perimeter += @sqrt(dx * dx + dy * dy);
+        }
+    }
+    
+    const potential_energy = surf_tension * perimeter;
+    
+    return kinetic_energy + potential_energy;
+}
+
+
+
 pub fn main() !void {
-    const n_particles: usize = 50000;
-    const max_init_position: f32 = 5;
-    const max_init_velocity: f32 = 0.1;
-    const surf_tension: f32 = 0.3;
+    const n_particles: usize = 10000;
+    const max_init_position: f32 = 20;
+    const max_init_velocity: f32 = 0.2;
+    const surf_tension: f32 = 0.1;
     const font_size: usize = 19;
-    const text_color: c.Color = c.WHITE;
+    const text_color: rl.Color = rl.WHITE;
 
     const n_particles_text = std.fmt.allocPrintZ(allocator, "particles: {d}", .{n_particles}) catch "format failed";
     const max_init_velocity_text = std.fmt.allocPrintZ(allocator, "max_init_vel: {d:.2}", .{max_init_velocity}) catch "format failed";
@@ -118,36 +156,44 @@ pub fn main() !void {
     defer allocator.free(max_init_velocity_text);
     defer allocator.free(surf_tension_text);
 
-    c.InitWindow(screen_width, screen_height, "zig-sim");
-    texture = c.LoadRenderTexture(screen_width, screen_height);
-    c.SetTargetFPS(120);
+    rl.InitWindow(screen_width, screen_height, "zig-soap-bubble");
+    rl.SetTargetFPS(60);
+
+    const texture = rl.LoadRenderTexture(screen_width, screen_height);
+    defer rl.UnloadRenderTexture(texture);
+
 
     var particles: [n_particles]Particle = undefined;
 
-    initializeParticles(&particles, max_init_position, max_init_velocity);
+    try initializeParticles(&particles, max_init_position, max_init_velocity);
 
-    while (!c.WindowShouldClose()) {
+    while (!rl.WindowShouldClose()) {
 
-        if (c.IsKeyPressed(c.KEY_ESCAPE)) {
+        if (rl.IsKeyPressed(rl.KEY_ESCAPE)) {
             break;
         }
 
-        if (c.IsKeyPressed(c.KEY_SPACE)) {
-            initializeParticles(&particles, max_init_position, max_init_velocity);
+        if (rl.IsKeyPressed(rl.KEY_SPACE)) {
+            try initializeParticles(&particles, max_init_position, max_init_velocity);
         }
         
-        c.BeginDrawing();
+        rl.BeginDrawing();
         const convex_hull = try quickHull(&particles, allocator);
         defer allocator.free(convex_hull);
+        try drawSystem(allocator, &particles, convex_hull, texture);
+        // drawSystem(&particles, convex_hull, texture);
         update(&particles, convex_hull, surf_tension);
-        drawSystem(&particles, convex_hull, texture);
-
-        c.DrawText(n_particles_text, 10, 10, font_size, text_color); // Draw the title at position (10,10) with font size 20
-        c.DrawText(max_init_velocity_text.ptr, 10, 10 + (4 + font_size), font_size, text_color);
-        c.DrawText(surf_tension_text.ptr, 10, 10 + 2*(4 + font_size), font_size, text_color);
-        c.EndDrawing();
+        const total_energy = calculateTotalEnergy(&particles, convex_hull, surf_tension);
+        const total_energy_text = std.fmt.allocPrintZ(allocator, "total_energy: {d:.2}", .{total_energy}) catch "format failed";
+        defer allocator.free(total_energy_text);
+        
+        rl.DrawText(n_particles_text, 10, 10, font_size, text_color); 
+        rl.DrawText(max_init_velocity_text.ptr, 10, 10 + (4 + font_size), font_size, text_color);
+        rl.DrawText(surf_tension_text.ptr, 10, 10 + 2*(4 + font_size), font_size, text_color);
+        rl.DrawText(total_energy_text.ptr, 10, 10 + 3*(4 + font_size), font_size, text_color);
+        rl.EndDrawing();
     }
 
-    c.UnloadRenderTexture(texture);
-    c.CloseWindow();
+    rl.UnloadRenderTexture(texture);
+    rl.CloseWindow();
 }

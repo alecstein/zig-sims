@@ -1,28 +1,48 @@
-const c = @cImport({
+const std = @import("std");
+const rl = @cImport({
     @cInclude("raylib.h");
 });
-const Particle = @import("main.zig").Particle;
+const main = @import("main.zig");
+const Particle = main.Particle;
 
-pub fn drawSystem(particles: []const Particle, convex_hull: []const *Particle, texture: c.RenderTexture2D) void {
+const screen_width = main.screen_width;
+const screen_height = main.screen_height;
+
+pub fn drawSystem(
+    alloc: std.mem.Allocator, 
+    particles: []const Particle,
+    convex_hull: []const *Particle,
+    texture: rl.RenderTexture2D,
+) !void {
+
     const line_size: f32 = 5;
-    const line_color: c.Color = c.GREEN;
-    const particle_color: c.Color = c.WHITE;
-    c.BeginTextureMode(texture);
-    c.ClearBackground(c.BLACK);
+    const line_color: rl.Color = rl.GREEN;
+    const particle_color: rl.Color = rl.WHITE;
 
-    // draw particles
-    for (particles) |particle| {
-        // can draw as pixels or circles
-        // pixels are much more efficient
-        c.DrawPixelV(particle.position, particle_color);
-        // c.DrawCircleV(particle.position, 2.0, particle_color);
+    const width: usize = @intCast(screen_width);
+    const height: usize = @intCast(screen_height);
+    var pixel_buffer = try alloc.alloc(rl.Color, width * height);
+    defer alloc.free(pixel_buffer);
+
+    for (pixel_buffer) |*p| {
+        p.* = rl.BLACK;
     }
+
+    for (particles) |particle| {
+        const px = particle.position.x;
+        const py = particle.position.y;
+        const ix: usize = @intFromFloat(px);
+        const iy: usize = @intFromFloat(py);
+        const index = iy * width + ix;
+        pixel_buffer[index] = particle_color;
+    }
+
+    rl.UpdateTexture(texture.texture, pixel_buffer.ptr);
+    rl.DrawTexture(texture.texture, 0, 0, rl.WHITE);
+
     // draw convex hull
     for (convex_hull, 0..) |particle, i| {
         const nextIndex = (i + 1) % convex_hull.len;
-        c.DrawLineEx(particle.position, convex_hull[nextIndex].position, line_size, line_color);
+        rl.DrawLineEx(particle.position, convex_hull[nextIndex].position, line_size, line_color);
     }
-
-    c.EndTextureMode();
-    c.DrawTexture(texture.texture, 0, 0, c.WHITE);
 }
