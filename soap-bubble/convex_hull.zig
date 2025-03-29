@@ -9,10 +9,25 @@ fn scalarCrossProduct(a: rl.Vector2, b: rl.Vector2) f32 {
     return a.x * b.y - a.y * b.x;
 }
 
+// Helper for subtraction
+fn vec2Sub(a: rl.Vector2, b: rl.Vector2) rl.Vector2 {
+    return .{ .x = a.x - b.x, .y = a.y - b.y };
+}
+
+// Helper for magnitude squared (often useful to avoid sqrt)
+fn vec2LenSq(a: rl.Vector2) f32 {
+    return a.x * a.x + a.y * a.y;
+}
+
+// Helper for magnitude
+fn vec2Len(a: rl.Vector2) f32 {
+    return @sqrt(vec2LenSq(a));
+}
+
 // returns True if p is to the right of the line from a to b
 fn pointIsRightOfLine(p: rl.Vector2, a: rl.Vector2, b: rl.Vector2) bool {
-    const ab = rl.Vector2{ .x = b.x - a.x, .y = b.y - a.y };
-    const ap = rl.Vector2{ .x = p.x - a.x, .y = p.y - a.y };
+    const ab = vec2Sub(b, a);
+    const ap = vec2Sub(p, a);
     const scalar_xp = scalarCrossProduct(ap, ab);
     return scalar_xp < 0;
 }
@@ -25,23 +40,23 @@ fn pointIsRightOfLine(p: rl.Vector2, a: rl.Vector2, b: rl.Vector2) bool {
 fn findHull(s_k: []*Particle, a: rl.Vector2, b: rl.Vector2, result: *std.ArrayList(*Particle), alloc: std.mem.Allocator) !void {
     if (s_k.len == 0) return;
 
-    var max_d_idx: usize = 0;
-    var max_d: f32 = 0;
+    var max_dist_idx: usize = 0;
+    var max_dist: f32 = 0;
+    const ab = vec2Sub(b, a);
+    const ab_magnitude = vec2Len(ab);
 
-    const ab = rl.Vector2{ .x = b.x - a.x, .y = b.y - a.y };
-    const ab_magnitude = @sqrt(ab.x * ab.x + ab.y * ab.y);
-
+    // find the furthest point p from the line ab
     for (s_k, 0..) |p, i| {
-        const pa = rl.Vector2{ .x = p.position.x - a.x, .y = p.position.y - a.y };
-        const d = @abs(scalarCrossProduct(pa, ab) / ab_magnitude);
-        if (d > max_d) {
-            max_d = d;
-            max_d_idx = i;
+        const pa = vec2Sub(p.position, a);
+        const dist = @abs(scalarCrossProduct(pa, ab) / ab_magnitude);
+        if (dist > max_dist) {
+            max_dist = dist;
+            max_dist_idx = i;
         }
     }
 
     // q gets added to the convex hull
-    const q = s_k[max_d_idx];
+    const q = s_k[max_dist_idx];
     try result.append(q);
 
     var s_1 = std.ArrayList(*Particle).init(alloc);
@@ -50,7 +65,7 @@ fn findHull(s_k: []*Particle, a: rl.Vector2, b: rl.Vector2, result: *std.ArrayLi
     defer s_2.deinit();
 
     for (s_k, 0..) |p, i| {
-        if (i == max_d_idx) continue;
+        if (i == max_dist_idx) continue;
         if (pointIsRightOfLine(p.position, a, q.position)) {
             try s_1.append(p);
         } else if (pointIsRightOfLine(p.position, q.position, b)) {
